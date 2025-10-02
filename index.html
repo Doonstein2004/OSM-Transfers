@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSM Analysis Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-active { border-bottom-color: #3b82f6; color: #3b82f6; font-weight: 700; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.6); }
+        button:disabled {
+            background-color: #d1d5db; /* gray-300 */
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 md:p-6">
+        <header class="flex flex-wrap gap-4 justify-between items-center mb-6 pb-6 border-b">
+             <div class="flex items-center space-x-3">
+                <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                <h1 class="text-3xl font-extrabold text-gray-900">OSM Analysis</h1>
+            </div>
+            <div class="flex items-center flex-wrap gap-3">
+                <select id="leagueSelector" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 max-w-xs"></select>
+                <button id="manageLeaguesBtn" class="bg-gray-700 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-800">Gestionar Ligas</button>
+                <!-- IDs añadidos para fácil acceso -->
+                <button id="assignManagersBtn" class="bg-yellow-500 text-white px-4 py-2 rounded-lg shadow hover:bg-yellow-600">Asignar Mánagers</button>
+                <button id="addTransfersBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">Añadir Fichajes</button>
+            </div>
+        </header>
+
+        <!-- El resto del HTML no cambia -->
+        <div id="loader" class="text-center py-10"></div>
+        <main id="mainContent" class="hidden">
+            <div class="border-b border-gray-200 mb-6">
+                <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
+                    <button class="tab py-4 px-1" data-tab="dashboard">Dashboard</button>
+                    <button class="tab py-4 px-1" data-tab="rivalries">Análisis Mánager</button>
+                    <button class="tab py-4 px-1" data-tab="managers">Ranking</button>
+                    <button class="tab py-4 px-1" data-tab="history">Historial</button>
+                </nav>
+            </div>
+            <div id="tab-content"></div>
+        </main>
+        <!-- Modals -->
+        <div id="manageLeaguesModal" class="modal-backdrop hidden"></div>
+        <div id="importLeagueModal" class="modal-backdrop hidden"></div>
+        <div id="assignManagersModal" class="modal-backdrop hidden"></div>
+        <div id="converterModal" class="modal-backdrop hidden"></div>
+        <div id="managerDetailModal" class="modal-backdrop hidden"></div>
+        <div id="confirmDeleteModal" class="modal-backdrop hidden"></div>
+        <div id="statusMessage" class="fixed bottom-5 right-5 z-[60] opacity-0 transition-opacity duration-500"></div>
+    </div>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
