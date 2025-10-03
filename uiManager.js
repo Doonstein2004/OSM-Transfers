@@ -41,13 +41,155 @@ export const uiManager = {
         const content = this.elements.tabContent;
 
         if (currentTab === 'dashboard') content.innerHTML = this.getDashboardHTML(stats, leagueData);
-        // CORRECCIÓN: Pasar 'leagueData' a getRivalriesHTML
         else if (currentTab === 'rivalries') content.innerHTML = this.getRivalriesHTML(stats, leagueData);
-        else if (currentTab === 'managers') content.innerHTML = this.getManagersHTML(stats.managerList, leagueData, currentSort);
+        else if (currentTab === 'ranking') content.innerHTML = this.getRankingHTML(stats.managerList, leagueData, currentSort); // LLAMADA AÑADIDA
+        else if (currentTab === 'evolution') content.innerHTML = this.getEvolutionHTML(stats);
         else if (currentTab === 'history') content.innerHTML = this.getHistoryHTML(transfers);
         
-        if (currentTab === 'managers') this.updateSortButtons(currentSort);
+        // El sort se aplica solo en la pestaña ranking
+        if (currentTab === 'ranking') this.updateSortButtons(currentSort);
     },
+
+    getRankingHTML(managerList, leagueData, currentSort) {
+        const managersByTeam = leagueData?.managersByTeam || {};
+        const teamByManager = Object.fromEntries(Object.entries(managersByTeam).map(([team, name]) => [name, team]));
+        const sortFunctions = { totalAssets: (a, b) => b.totalAssets - a.totalAssets, spent: (a, b) => b.spent - a.spent, income: (a, b) => b.income - a.income, count: (a, b) => b.count - a.count };
+        
+        const listHTML = [...managerList].sort(sortFunctions[currentSort]).map(m => {
+            const teamName = teamByManager[m.name] || '';
+            const teamClass = teamName.includes('Blue') ? 'team-blue-bg' : teamName.includes('Red') ? 'team-red-bg' : 'team-neutral-bg';
+            return `
+            <div class="card p-4 manager-card ${teamClass}" data-manager-name="${m.name}">
+                <h3 class="font-bold text-lg">${m.name}</h3>
+                <div class="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-center text-sm">
+                    <div><p class="text-xs">Activos Totales</p><p class="font-semibold text-blue-600">${m.totalAssets.toFixed(1)}M</p></div>
+                    <div><p class="text-xs">Caja Estimada</p><p class="font-semibold ${m.cash >= 0 ? 'text-green-600' : 'text-red-600'}">${m.cash.toFixed(1)}M</p></div>
+                    <div><p class="text-xs">Gasto</p><p class="font-semibold text-red-600">${m.spent.toFixed(1)}M</p></div>
+                    <div><p class="text-xs">Ingresos</p><p class="font-semibold text-green-600">${m.income.toFixed(1)}M</p></div>
+                    <div class="col-span-2 md:col-span-1"><p class="text-xs">Operaciones</p><p class="font-semibold">${m.count}</p></div>
+                </div>
+            </div>`;
+        }).join('');
+        
+        return `
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Ranking de Mánagers</h2>
+            <p class="text-sm text-gray-500 mb-4">Clasificación general de los mánagers de la liga. Haz clic en un mánager para ver sus detalles.</p>
+            <div class="flex flex-wrap gap-2 mb-4 bg-gray-200 p-1 rounded-lg">
+                <button class="sort-btn flex-1 px-3 py-1.5 rounded-md text-sm" data-sort="totalAssets">Activos Totales</button>
+                <button class="sort-btn flex-1 px-3 py-1.5 rounded-md text-sm" data-sort="spent">Gasto</button>
+                <button class="sort-btn flex-1 px-3 py-1.5 rounded-md text-sm" data-sort="income">Ingresos</button>
+                <button class="sort-btn flex-1 px-3 py-1.5 rounded-md text-sm" data-sort="count">Operaciones</button>
+            </div>
+            <div class="space-y-4">${listHTML}</div>`;
+    },
+
+
+    getEvolutionHTML(stats) {
+        if (!stats.historicalData || Object.keys(stats.historicalData).length === 0) {
+            return '<p class="text-center text-gray-500 mt-8">No hay suficientes datos de jornadas para mostrar la evolución.</p>';
+        }
+        
+        const { totalDays, preseasonRounds } = stats;
+        const lastDay = totalDays;
+
+        return `
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Evolución de Activos Totales</h2>
+            <div class="card p-4 md:p-6 mb-6">
+                <canvas id="evolutionChart"></canvas>
+            </div>
+
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Clasificación por Jornada</h2>
+            <div class="card p-4 md:p-6">
+                <div class="flex items-center gap-4 mb-4">
+                    <label for="roundSlider" class="font-semibold">Seleccionar Jornada:</label>
+                    <input type="range" id="roundSlider" min="1" max="${totalDays}" value="${lastDay}" class="w-full">
+                    <span id="roundLabel" class="font-bold text-lg text-blue-600 w-32 text-center"></span>
+                </div>
+                <div id="evolutionTableContainer" class="overflow-x-auto">
+                    <!-- La tabla se renderizará aquí vía JavaScript -->
+                </div>
+            </div>
+        `;
+    },
+
+    renderEvolutionTable(day, stats) {
+        const { historicalData, preseasonRounds } = stats;
+        const roundLabel = document.getElementById('roundLabel');
+        const tableContainer = document.getElementById('evolutionTableContainer');
+
+        const gameRound = (day <= preseasonRounds) ? `Pretemporada ${day}` : `Jornada ${day - preseasonRounds}`;
+        if(roundLabel) roundLabel.textContent = gameRound;
+        
+        const dayData = historicalData[day];
+        if (!dayData) { tableContainer.innerHTML = 'No hay datos.'; return; }
+
+        // Ordenar por activos totales para crear el ranking
+        const rankedData = [...dayData].sort((a, b) => b.totalAssets - a.totalAssets);
+
+        const tableRows = rankedData.map((manager, index) => `
+            <tr class="border-b">
+                <td class="p-3 font-bold">${index + 1}</td>
+                <td class="p-3">${manager.name}</td>
+                <td class="p-3 text-right">${manager.currentValue.toFixed(1)}M</td>
+                <td class="p-3 text-right font-semibold ${manager.cash >= 0 ? 'text-green-600' : 'text-red-600'}">${manager.cash.toFixed(1)}M</td>
+                <td class="p-3 text-right font-bold text-blue-600">${manager.totalAssets.toFixed(1)}M</td>
+            </tr>
+        `).join('');
+
+        tableContainer.innerHTML = `
+            <table class="min-w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="p-3 text-left">Pos</th>
+                        <th class="p-3 text-left">Mánager</th>
+                        <th class="p-3 text-right">Valor Equipo</th>
+                        <th class="p-3 text-right">Caja</th>
+                        <th class="p-3 text-right">Activos Totales</th>
+                    </tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+            </table>
+        `;
+    },
+
+    // --- NUEVA FUNCIÓN PARA RENDERIZAR EL GRÁFICO ---
+    renderEvolutionChart(stats) {
+        const { historicalData, managerList, totalDays, preseasonRounds } = stats;
+        const ctx = document.getElementById('evolutionChart')?.getContext('2d');
+        if (!ctx) return;
+        
+        if (this.chartInstance) this.chartInstance.destroy();
+
+        const labels = Array.from({ length: totalDays }, (_, i) => {
+            const day = i + 1;
+            return (day <= preseasonRounds) ? `Pre ${day}` : `J${day - preseasonRounds}`;
+        });
+        
+        // Paleta de colores para los mánagers
+        const colors = ['#3b82f6', '#ef4444', '#10b981', '#f97316', '#8b5cf6', '#eab308', '#ec4899', '#64748b', '#14b8a6', '#d946ef'];
+        
+        const datasets = managerList.map((manager, index) => {
+            const data = [];
+            for (let day = 1; day <= totalDays; day++) {
+                const dayData = historicalData[day]?.find(m => m.name === manager.name);
+                data.push(dayData ? dayData.totalAssets : null);
+            }
+            return {
+                label: manager.name,
+                data: data,
+                borderColor: colors[index % colors.length],
+                tension: 0.1,
+                fill: false,
+            };
+        });
+
+        this.chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    },
+
 
 
     // --- Selectores y Vistas Principales ---
