@@ -66,7 +66,6 @@ export const app = {
     },
 
     processAndRender() {
-        // Chequeo de seguridad: No renderizar si no tenemos los datos básicos de la liga
         if (!this.currentLeagueId || !this.currentLeagueData) {
             uiManager.showLoader(false);
             return;
@@ -74,6 +73,19 @@ export const app = {
         const stats = statsEngine.calculate(this.allTransfers, this.currentLeagueData);
         if (stats) {
             uiManager.renderContent(stats, this.allTransfers, this.currentLeagueData, this.currentTab, this.currentSort);
+
+            // --- NUEVO: Si la pestaña es "Evolución", inicializa los componentes interactivos ---
+            if (this.currentTab === 'evolution' && stats.historicalData) {
+                uiManager.renderEvolutionChart(stats);
+                uiManager.renderEvolutionTable(stats.totalDays, stats); // Mostrar la última jornada por defecto
+                
+                const slider = document.getElementById('roundSlider');
+                if (slider) {
+                    slider.addEventListener('input', (e) => {
+                        uiManager.renderEvolutionTable(parseInt(e.target.value), stats);
+                    });
+                }
+            }
         }
         uiManager.showLoader(false);
     },
@@ -196,17 +208,22 @@ export const app = {
     },
 
     async convertTransfersToJSON() {
+        if (!this.currentLeagueData || !this.currentLeagueData.teams) {
+            uiManager.showStatusMessage("No se puede convertir sin una lista de equipos. Importa una plantilla primero.", "error");
+            return;
+        }
+
         const rawText = document.getElementById('rawTextInput').value;
-        const { transfers, managersByTeam } = dataParser.convertToJSON(rawText);
-        const parsedTransfers = JSON.parse(transfers);
+        // Ahora se le pasa la lista de equipos de la liga actual al parser.
+        const { transfers, managersByTeam } = dataParser.convertToJSON(rawText, this.currentLeagueData.teams);
         
+        const parsedTransfers = JSON.parse(transfers);
         document.getElementById('jsonOutputArea').value = transfers;
 
-        // Si se encontraron nuevos mánagers, se actualiza la configuración de la liga INMEDIATAMENTE.
         if (Object.keys(managersByTeam).length > 0) {
             const updatedManagers = { ...this.currentLeagueData.managersByTeam, ...managersByTeam };
-            this.currentLeagueData.managersByTeam = updatedManagers; // Actualiza el estado local
-            await firebaseService.saveLeagueSetup(this.currentLeagueId, { managersByTeam: updatedManagers }); // Guarda en Firebase
+            this.currentLeagueData.managersByTeam = updatedManagers;
+            await firebaseService.saveLeagueSetup(this.currentLeagueId, { managersByTeam: updatedManagers });
             uiManager.showStatusMessage("Asociaciones de mánagers actualizadas.", "success");
         }
 
@@ -216,6 +233,7 @@ export const app = {
             uiManager.showStatusMessage("No se encontraron fichajes válidos en el texto.", "error");
         }
     },
+
 
     async saveLeagueSetup() {
         const newLeagueData = { managerInitialValues: {}, managersByTeam: {}, managerCurrentValues: {} };
@@ -376,7 +394,7 @@ export const app = {
     showMyTeamModal(recommendations) {
         const recHTML = recommendations.length ? recommendations.map(p => `<tr class="tier-${p.playerTier.toLowerCase()}"><td class="px-4 py-3"><div>${p.name} (${p.pos}, ${p.ovr})</div><div class="text-xs font-semibold text-gray-500">${p.playerTier}</div></td><td class="px-4 py-3 text-center" title="Tendencia del mercado para este tipo de jugador en los últimos 7 días.">${p.trend}</td><td class="px-4 py-3 text-center font-bold">${p.liquidity}</td><td class="px-4 py-3">${p.value.toFixed(1)}M</td><td class="px-4 py-3 font-semibold text-green-600">${p.cautiousPrice.toFixed(1)}M</td><td class="px-4 py-3 font-bold text-blue-600">${p.optimalPrice.toFixed(1)}M</td></tr>`).join('') : '<tr><td colspan="6" class="text-center p-4 text-gray-500">No hay datos para mostrar. Pega tu plantilla y analiza.</td></tr>';
         const teamInputText = document.getElementById('myTeamInput')?.value || '';
-        uiManager.elements.myTeamModal.innerHTML = `<div class="card w-11/12 max-w-6xl mx-auto p-6 relative"><style>.tier-estrella { background-color: #fffbeb; } .tier-calidad { background-color: #f0f9ff; }</style><button id="closeMyTeamModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 font-bold text-2xl">&times;</button><h2 class="text-2xl font-bold mb-2 text-gray-800">Análisis de Venta Avanzado</h2><div class="text-sm text-gray-600 mb-4 grid grid-cols-1 md:grid-cols-2 gap-x-4"><p><span class="font-semibold text-gray-800">Tendencia:</span> 🔥 Mercado al alza, ❄️ Mercado a la baja, ➡️ Estable.</p><p><span class="font-semibold text-gray-800">Liquidez:</span> Nº de ventas de jugadores similares. Mide la demanda.</p><p><span class="font-semibold text-green-600">Precio Cauteloso:</span> Precio para una venta con alta probabilidad y rapidez.</p><p><span class="font-semibold text-blue-600">Precio Óptimo:</span> Precio ambicioso para maximizar beneficio a medio plazo.</p></div><textarea id="myTeamInputModal" class="w-full h-40 p-3 border rounded-lg font-mono text-xs" placeholder="Pega aquí la plantilla...">${teamInputText}</textarea><div class="text-right mt-4 mb-6"><button id="analyzeMyTeamBtnModal" class="bg-green-600 text-white px-6 py-2 rounded-lg shadow">Volver a Analizar</button></div><div id="myTeamRecommendations"><div class="card overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Jugador (Tier)</th><th class="px-4 py-2 text-center" title="Momento del Mercado (últimos 7 días)">Tend.</th><th class="px-4 py-2 text-center" title="Número de ventas de jugadores similares.">Liquidez</th><th class="px-4 py-2 text-left">Valor Actual</th><th class="px-4 py-2 text-left">P. Cauteloso</th><th class="px-4 py-2 text-left">P. Óptimo</th></tr></thead><tbody class="bg-white divide-y">${recHTML}</tbody></table></div></div></div>`;
+        uiManager.elements.myTeamModal.innerHTML = `<div class="card w-11/12 max-w-6xl mx-auto p-6 relative"><style>.tier-estrella { background-color: #fffbeb; } .tier-calidad { background-color: #f0f9ff; }</style><button id="closeMyTeamModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 font-bold text-2xl">&times;</button><h2 class="text-2xl font-bold mb-2 text-gray-800">Análisis de Venta Avanzado</h2><div class="text-sm text-gray-600 mb-4 grid grid-cols-1 md:grid-cols-2 gap-x-4"><p><span class="font-semibold text-gray-800">Tendencia:</span> ?? Mercado al alza, ?? Mercado a la baja, ?? Estable.</p><p><span class="font-semibold text-gray-800">Liquidez:</span> Nº de ventas de jugadores similares. Mide la demanda.</p><p><span class="font-semibold text-green-600">Precio Cauteloso:</span> Precio para una venta con alta probabilidad y rapidez.</p><p><span class="font-semibold text-blue-600">Precio Óptimo:</span> Precio ambicioso para maximizar beneficio a medio plazo.</p></div><textarea id="myTeamInputModal" class="w-full h-40 p-3 border rounded-lg font-mono text-xs" placeholder="Pega aquí la plantilla...">${teamInputText}</textarea><div class="text-right mt-4 mb-6"><button id="analyzeMyTeamBtnModal" class="bg-green-600 text-white px-6 py-2 rounded-lg shadow">Volver a Analizar</button></div><div id="myTeamRecommendations"><div class="card overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Jugador (Tier)</th><th class="px-4 py-2 text-center" title="Momento del Mercado (últimos 7 días)">Tend.</th><th class="px-4 py-2 text-center" title="Número de ventas de jugadores similares.">Liquidez</th><th class="px-4 py-2 text-left">Valor Actual</th><th class="px-4 py-2 text-left">P. Cauteloso</th><th class="px-4 py-2 text-left">P. Óptimo</th></tr></thead><tbody class="bg-white divide-y">${recHTML}</tbody></table></div></div></div>`;
         uiManager.elements.myTeamModal.classList.remove('hidden');
     }
 };
