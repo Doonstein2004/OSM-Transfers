@@ -3,6 +3,7 @@ import { firebaseService } from './firebaseService.js';
 import { dataParser } from './dataParser.js';
 import { statsEngine } from './statsEngine.js';
 import { uiManager } from './uiManager.js';
+import { debugCashFlow } from './debugCashFlow.js';
 
 export const app = {
     currentTab: 'dashboard', currentSort: 'totalAssets',
@@ -396,7 +397,17 @@ export const app = {
         const teamInputText = document.getElementById('myTeamInput')?.value || '';
         uiManager.elements.myTeamModal.innerHTML = `<div class="card w-11/12 max-w-6xl mx-auto p-6 relative"><style>.tier-estrella { background-color: #fffbeb; } .tier-calidad { background-color: #f0f9ff; }</style><button id="closeMyTeamModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 font-bold text-2xl">&times;</button><h2 class="text-2xl font-bold mb-2 text-gray-800">Análisis de Venta Avanzado</h2><div class="text-sm text-gray-600 mb-4 grid grid-cols-1 md:grid-cols-2 gap-x-4"><p><span class="font-semibold text-gray-800">Tendencia:</span> ?? Mercado al alza, ?? Mercado a la baja, ?? Estable.</p><p><span class="font-semibold text-gray-800">Liquidez:</span> Nº de ventas de jugadores similares. Mide la demanda.</p><p><span class="font-semibold text-green-600">Precio Cauteloso:</span> Precio para una venta con alta probabilidad y rapidez.</p><p><span class="font-semibold text-blue-600">Precio Óptimo:</span> Precio ambicioso para maximizar beneficio a medio plazo.</p></div><textarea id="myTeamInputModal" class="w-full h-40 p-3 border rounded-lg font-mono text-xs" placeholder="Pega aquí la plantilla...">${teamInputText}</textarea><div class="text-right mt-4 mb-6"><button id="analyzeMyTeamBtnModal" class="bg-green-600 text-white px-6 py-2 rounded-lg shadow">Volver a Analizar</button></div><div id="myTeamRecommendations"><div class="card overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Jugador (Tier)</th><th class="px-4 py-2 text-center" title="Momento del Mercado (últimos 7 días)">Tend.</th><th class="px-4 py-2 text-center" title="Número de ventas de jugadores similares.">Liquidez</th><th class="px-4 py-2 text-left">Valor Actual</th><th class="px-4 py-2 text-left">P. Cauteloso</th><th class="px-4 py-2 text-left">P. Óptimo</th></tr></thead><tbody class="bg-white divide-y">${recHTML}</tbody></table></div></div></div>`;
         uiManager.elements.myTeamModal.classList.remove('hidden');
+    },
+
+    debugManager(managerName) {
+        if (!this.currentLeagueData || !this.allTransfers) {
+            console.error('? No hay datos cargados. Selecciona una liga primero.');
+            return;
+        }
+        return debugCashFlow(managerName, this.allTransfers, this.currentLeagueData);
     }
 };
 
 app.init();
+
+window.debugManager = (name) => app.debugManager(name);
