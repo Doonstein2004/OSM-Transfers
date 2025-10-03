@@ -1,82 +1,111 @@
 // js/statsEngine.js
 export const statsEngine = {
     calculate(transfers, leagueData) {
-        if (!leagueData || !leagueData.teams) return { managerList: [], totalSpent: 0, totalIncome: 0, avgPurchasePrice: 0, avgSalePrice: 0, panicBuys: [], masterSales: [], mostTraded: [] };
-
-        const { teams, managersByTeam = {} } = leagueData;
-        const managers = {};
-        
-        // 1. Inicializa las estadísticas para cada mánager con datos de la plantilla
-        for (const team of teams) {
-            const managerName = managersByTeam[team.name];
-            if (managerName) {
-                managers[managerName] = {
-                    name: managerName,
-                    teamName: team.name,
-                    initialValue: team.initialValue || 0,
-                    currentValue: team.currentValue || 0,
-                    initialCash: team.initialCash || 0,
-                    spent: 0, income: 0, count: 0, purchasePremiums: [], saleProfits: [], transfers: []
-                };
-            }
+        if (!leagueData || !leagueData.teams) {
+            return { managerList: [], historicalData: null, totalSpent: 0, totalIncome: 0, avgPurchasePrice: 0, avgSalePrice: 0, panicBuys: [], masterSales: [], mostTraded: [], totalDays: 0, preseasonRounds: 3 };
         }
 
-        let totalSpent = 0, totalIncome = 0;
-        
-        // 2. Procesa todas las transferencias para acumular gastos e ingresos
-        transfers.forEach(t => {
-            const manager = managers[t.managerName];
-            if (manager) {
-                manager.transfers.push(t); manager.count++;
-                if (t.transactionType === 'purchase') {
-                    totalSpent += t.finalPrice; manager.spent += t.finalPrice;
-                    const premium = t.baseValue > 0 ? ((t.finalPrice / t.baseValue) - 1) * 100 : 0;
-                    manager.purchasePremiums.push(premium);
-                } else if (t.transactionType === 'sale') {
-                    totalIncome += t.finalPrice; manager.income += t.finalPrice;
-                    const profit = t.baseValue > 0 ? ((t.finalPrice / t.baseValue) - 1) * 100 : 0;
-                    manager.saleProfits.push(profit);
+        const { teams, managersByTeam = {} } = leagueData;
+        const dailyInterestRate = 0.02;
+        const preseasonRounds = 3;
+
+        const maxRoundFromTransfers = transfers.reduce((max, t) => Math.max(max, t.round || 0), 0);
+        const totalDaysToSimulate = maxRoundFromTransfers + preseasonRounds;
+
+        const historicalSnapshots = {};
+
+        let managerStates = teams
+            .filter(team => managersByTeam[team.name])
+            .map(team => ({
+                name: managersByTeam[team.name],
+                teamName: team.name,
+                teamData: team,
+                cash: team.initialCash || 0,
+            }));
+
+        for (let day = 1; day <= totalDaysToSimulate; day++) {
+            const gameRoundForToday = (day <= preseasonRounds) ? 0 : (day - preseasonRounds);
+            for (const managerState of managerStates) {
+                if (managerState.cash > 0) managerState.cash *= (1 + dailyInterestRate);
+                managerState.cash += (managerState.teamData.fixedIncomePerRound || 0);
+                const transfersToday = transfers.filter(t => t.managerName === managerState.name && t.round === gameRoundForToday);
+                for (const t of transfersToday) {
+                    managerState.cash += (t.transactionType === 'sale' ? t.finalPrice : -t.finalPrice);
                 }
             }
-        });
-        
-        const calcAvg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+            historicalSnapshots[day] = managerStates.map(ms => ({
+                name: ms.name,
+                cash: ms.cash,
+                currentValue: ms.teamData.currentValue || 0,
+                totalAssets: (ms.teamData.currentValue || 0) + ms.cash
+            }));
+        }
 
-        // 3. Calcula las métricas finales para cada mánager
-        const managerList = Object.values(managers).map(m => {
-            // --- CORRECCIÓN DE LÓGICA FINANCIERA ---
-            const transferNet = m.income - m.spent;
-            // La caja actual es la caja inicial MÁS el balance de fichajes.
-            const cash = m.initialCash + transferNet;
-            // Los activos totales son el valor actual del equipo MÁS la caja actual.
-            const totalAssets = m.currentValue + cash;
-            // El punto de partida eran los activos iniciales totales.
-            const initialTotalAssets = m.initialValue + m.initialCash;
-            // La evolución se calcula sobre los activos totales.
+        const calcAvg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+        
+        const finalManagerList = managerStates.map(finalState => {
+            const managerTransfers = transfers.filter(t => t.managerName === finalState.name);
+            let totalSpent = 0, totalIncome = 0;
+            let purchasePremiums = [], saleProfits = [];
+            
+            managerTransfers.forEach(t => {
+                if (t.transactionType === 'purchase') {
+                    totalSpent += t.finalPrice;
+                    purchasePremiums.push(t.baseValue > 0 ? ((t.finalPrice / t.baseValue) - 1) * 100 : 0);
+                } else {
+                    totalIncome += t.finalPrice;
+                    saleProfits.push(t.baseValue > 0 ? ((t.finalPrice / t.baseValue) - 1) * 100 : 0);
+                }
+            });
+
+            const totalAssets = (finalState.teamData.currentValue || 0) + finalState.cash;
+            const initialTotalAssets = (finalState.teamData.initialValue || 0) + (finalState.teamData.initialCash || 0);
             const evolution = initialTotalAssets > 0 ? ((totalAssets - initialTotalAssets) / initialTotalAssets) * 100 : 0;
             
-            return { 
-                ...m, 
-                transferNet, 
-                cash, 
-                totalAssets, 
-                evolution, 
-                avgPremium: calcAvg(m.purchasePremiums), 
-                avgProfit: calcAvg(m.saleProfits) 
+            return {
+                name: finalState.name,
+                teamName: finalState.teamName,
+                initialValue: finalState.teamData.initialValue,
+                currentValue: finalState.teamData.currentValue || 0,
+                initialCash: finalState.teamData.initialCash,
+                cash: finalState.cash,
+                totalAssets: totalAssets,
+                evolution: evolution,
+                spent: totalSpent,
+                income: totalIncome,
+                transferNet: totalIncome - totalSpent,
+                count: managerTransfers.length,
+                transfers: managerTransfers,
+                avgPremium: calcAvg(purchasePremiums),
+                avgProfit: calcAvg(saleProfits)
             };
         });
-        
-        // El resto de cálculos generales no cambian
+
+        const totalLeagueSpent = finalManagerList.reduce((sum, m) => sum + m.spent, 0);
+        const totalLeagueIncome = finalManagerList.reduce((sum, m) => sum + m.income, 0);
         const purchaseCount = transfers.filter(t => t.transactionType === 'purchase').length;
         const saleCount = transfers.filter(t => t.transactionType === 'sale').length;
-        const avgPurchasePrice = purchaseCount > 0 ? totalSpent / purchaseCount : 0;
-        const avgSalePrice = saleCount > 0 ? totalIncome / saleCount : 0;
+        const avgPurchasePrice = purchaseCount > 0 ? totalLeagueSpent / purchaseCount : 0;
+        const avgSalePrice = saleCount > 0 ? totalLeagueIncome / saleCount : 0;
         const panicBuys = transfers.filter(t=>t.transactionType === 'purchase').map(t=> ({...t, premiumPercent: t.baseValue>0 ? ((t.finalPrice/t.baseValue)-1)*100:0})).sort((a,b) => b.premiumPercent - a.premiumPercent).slice(0, 5);
         const masterSales = transfers.filter(t=>t.transactionType === 'sale').map(t=> ({...t, profitPercent: t.baseValue>0 ? ((t.finalPrice/t.baseValue)-1)*100:0})).sort((a,b) => b.profitPercent - a.profitPercent).slice(0, 5);
         const tradeCounts = transfers.reduce((acc, t) => { acc[t.playerName] = (acc[t.playerName] || 0) + 1; return acc; }, {});
         const mostTraded = Object.entries(tradeCounts).sort(([,a],[,b]) => b-a).slice(0,5).map(([name, count]) => ({name, count}));
-
-        return { managerList, totalSpent, totalIncome, avgPurchasePrice, avgSalePrice, panicBuys, masterSales, mostTraded };
+        
+        // --- FINAL CORRECTION HERE ---
+        return { 
+            managerList: finalManagerList, 
+            historicalData: historicalSnapshots, 
+            totalDays: totalDaysToSimulate, 
+            preseasonRounds, 
+            totalSpent: totalLeagueSpent,    // Corrected property name
+            totalIncome: totalLeagueIncome,  // Corrected property name
+            avgPurchasePrice, 
+            avgSalePrice, 
+            panicBuys, 
+            masterSales, 
+            mostTraded 
+        };
     },
     
     getManagerDetails(managerName, allManagerData) {
@@ -148,6 +177,5 @@ export const statsEngine = {
         }).sort((a,b) => b.optimalPrice - a.optimalPrice);
     }
 };
-
 
 
