@@ -1,16 +1,3 @@
-// js/config.js
-
-// IMPORTANTE: Rellena esto con la configuración de tu proyecto de Firebase
-export const firebaseConfig = {
-            apiKey: "exapmle",
-            authDomain: "exapmle",
-            projectId: "exapmle",
-            storageBucket: "exapmle",
-            messagingSenderId: "exapmle",
-            appId: "exapmle",
-            measurementId: "exapmle"
-};
-
 // Configuración general de la aplicación
 export const config = {
     // Un ID único para esta liga, para que puedas tener varias en la misma base de datos.
