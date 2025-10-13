@@ -1,95 +1,110 @@
 // js/main.js
-import { firebaseService } from './firebaseService.js';
+import { apiService } from './apiService.js';
 import { dataParser } from './dataParser.js';
 import { statsEngine } from './statsEngine.js';
 import { uiManager } from './uiManager.js';
-import { debugCashFlow } from './debugCashFlow.js';
 
 export const app = {
     currentTab: 'dashboard', currentSort: 'totalAssets',
     leagues: [], currentLeagueId: null, currentLeagueData: null, allTransfers: [],
-    unsubscribeLeague: null, // Listener para la info de la liga
-    unsubscribeTransfers: null, // Listener para los fichajes
+
 
     // --- Inicialización ---
     async init() {
         uiManager.init();
         this.setupEventListeners();
-        uiManager.elements.loader.innerHTML = '<p>Conectando...</p>';
-        if (firebaseService.init()) {
-            firebaseService.authenticate(() => this.loadInitialData());
-        }
+        uiManager.elements.loader.innerHTML = '<p>Conectando con la API...</p>';
+        this.loadInitialData();
     },
 
     async loadInitialData() {
         uiManager.showLoader(true);
-        this.leagues = await firebaseService.getAllLeagues();
+        this.leagues = await apiService.getAllLeagues();
         uiManager.renderLeagueSelector(this.leagues, this.currentLeagueId);
-        let leagueToLoad = localStorage.getItem('selectedLeagueId') || (this.leagues[0]?.id);
-        if (leagueToLoad && this.leagues.some(l => l.id === leagueToLoad)) {
+        
+        // CORRECCIÓN: Lógica de carga inicial más segura.
+        let leagueToLoad = localStorage.getItem('selectedLeagueId');
+
+        // 1. Si no hay nada en localStorage, intentar con la primera liga de la lista.
+        if (!leagueToLoad && this.leagues.length > 0) {
+            leagueToLoad = this.leagues[0].id;
+        }
+
+        // 2. Validar que la liga a cargar (de localStorage o la primera) realmente existe.
+        if (leagueToLoad && this.leagues.some(l => String(l.id) === String(leagueToLoad))) {
             await this.switchLeague(leagueToLoad);
         } else {
+            // 3. Si no hay liga válida que cargar, limpiar y mostrar el mensaje de bienvenida.
+            localStorage.removeItem('selectedLeagueId'); // Limpiar valor inválido si lo hubiera
             uiManager.showLoader(false);
-            uiManager.elements.tabContent.innerHTML = `<p class="text-center p-8">Bienvenido. Por favor, crea una liga usando el botón "Gestionar Ligas".</p>`;
+            uiManager.elements.tabContent.innerHTML = `<p class="text-center p-8">Bienvenido. Por favor, selecciona una liga del menú superior.</p>`;
             this.updateHeaderButtonsState(false);
         }
     },
     
     async switchLeague(leagueId) {
-        if (!leagueId) { this.updateHeaderButtonsState(false); return; }
+        if (!leagueId || leagueId === 'undefined') {
+            this.updateHeaderButtonsState(false);
+            return;
+        }
+
         
         uiManager.showLoader(true);
         this.currentLeagueId = leagueId;
         localStorage.setItem('selectedLeagueId', leagueId);
-        uiManager.renderLeagueSelector(this.leagues, leagueId);
+        // La API devuelve números, así que usamos parseInt para la comparación
+        uiManager.renderLeagueSelector(this.leagues, parseInt(leagueId));
         this.updateHeaderButtonsState(true);
 
-        // Anular suscripciones anteriores para evitar fugas de memoria
-        if (this.unsubscribeLeague) this.unsubscribeLeague();
-        if (this.unsubscribeTransfers) this.unsubscribeTransfers();
+        try {
+            const [leagueData, transfers] = await Promise.all([
+                apiService.getLeagueData(leagueId),
+                apiService.getLeagueTransfers(leagueId)
+            ]);
 
-        // 1. Establecer listener para el documento de la LIGA
-        this.unsubscribeLeague = firebaseService.listenToLeagueData(leagueId, (leagueData) => {
             if (leagueData) {
+                // ELIMINADO: Ya no necesitamos renombrar 'managers_by_team' manualmente.
+                // leagueData.managersByTeam = leagueData.managers_by_team || {};
+                
                 this.currentLeagueData = leagueData;
-                this.processAndRender(); // Re-renderizar con los datos actualizados de la liga
+                this.allTransfers = transfers;
+                this.processAndRender();
             } else {
-                // La liga fue eliminada, recargar todo
-                this.loadInitialData();
+                uiManager.showStatusMessage('La liga seleccionada ya no existe.', 'error');
+                await this.loadInitialData();
             }
-        });
-
-        // 2. Establecer listener para la sub-colección de FICHAJES
-        this.unsubscribeTransfers = firebaseService.listenToTransfers(leagueId, transfers => {
-            this.allTransfers = transfers;
-            this.processAndRender(); // Re-renderizar con los fichajes actualizados
-        });
+        } catch (error) {
+            uiManager.showError(`No se pudieron cargar los datos de la liga: ${error.message}`);
+        } finally {
+            uiManager.showLoader(false);
+        }
     },
+
+
 
     processAndRender() {
         if (!this.currentLeagueId || !this.currentLeagueData) {
             uiManager.showLoader(false);
             return;
         }
+        
+        if (uiManager.chartInstance) {
+            uiManager.chartInstance.destroy();
+            uiManager.chartInstance = null;
+        }
+
         const stats = statsEngine.calculate(this.allTransfers, this.currentLeagueData);
         if (stats) {
             uiManager.renderContent(stats, this.allTransfers, this.currentLeagueData, this.currentTab, this.currentSort);
-
-            // --- NUEVO: Si la pestaña es "Evolución", inicializa los componentes interactivos ---
-            if (this.currentTab === 'evolution' && stats.historicalData) {
-                uiManager.renderEvolutionChart(stats);
-                uiManager.renderEvolutionTable(stats.totalDays, stats); // Mostrar la última jornada por defecto
-                
-                const slider = document.getElementById('roundSlider');
-                if (slider) {
-                    slider.addEventListener('input', (e) => {
-                        uiManager.renderEvolutionTable(parseInt(e.target.value), stats);
-                    });
-                }
+            
+            if (this.currentTab === 'evolution' && stats.managerList.length > 0) {
+                uiManager.renderEvolutionChart(stats.managerList);
             }
         }
         uiManager.showLoader(false);
     },
+
+
 
 
     
@@ -209,22 +224,17 @@ export const app = {
     },
 
     async convertTransfersToJSON() {
-        if (!this.currentLeagueData || !this.currentLeagueData.teams) {
-            uiManager.showStatusMessage("No se puede convertir sin una lista de equipos. Importa una plantilla primero.", "error");
-            return;
-        }
-
         const rawText = document.getElementById('rawTextInput').value;
-        // Ahora se le pasa la lista de equipos de la liga actual al parser.
-        const { transfers, managersByTeam } = dataParser.convertToJSON(rawText, this.currentLeagueData.teams);
-        
+        const { transfers, managersByTeam } = dataParser.convertToJSON(rawText);
         const parsedTransfers = JSON.parse(transfers);
+        
         document.getElementById('jsonOutputArea').value = transfers;
 
+        // Si se encontraron nuevos mánagers, se actualiza la configuración de la liga INMEDIATAMENTE.
         if (Object.keys(managersByTeam).length > 0) {
             const updatedManagers = { ...this.currentLeagueData.managersByTeam, ...managersByTeam };
-            this.currentLeagueData.managersByTeam = updatedManagers;
-            await firebaseService.saveLeagueSetup(this.currentLeagueId, { managersByTeam: updatedManagers });
+            this.currentLeagueData.managersByTeam = updatedManagers; // Actualiza el estado local
+            await firebaseService.saveLeagueSetup(this.currentLeagueId, { managersByTeam: updatedManagers }); // Guarda en Firebase
             uiManager.showStatusMessage("Asociaciones de mánagers actualizadas.", "success");
         }
 
@@ -234,7 +244,6 @@ export const app = {
             uiManager.showStatusMessage("No se encontraron fichajes válidos en el texto.", "error");
         }
     },
-
 
     async saveLeagueSetup() {
         const newLeagueData = { managerInitialValues: {}, managersByTeam: {}, managerCurrentValues: {} };
@@ -360,10 +369,13 @@ export const app = {
             return;
         }
 
-        // CORRECCIÓN 1: Se usa el `team.name` real y los valores guardados.
+        // CORRECCIÓN: Añadir un fallback `|| {}` para evitar el error si managersByTeam es nulo.
+        const managersByTeam = this.currentLeagueData.managersByTeam || {};
+
         const rows = this.currentLeagueData.teams.map(team => {
-            const managerName = this.currentLeagueData.managersByTeam[team.name] || '';
-            const currentValue = team.currentValue || ''; // `team.currentValue` en lugar de un valor estático
+            // Ahora esto es seguro, incluso si la propiedad no existiera.
+            const managerName = managersByTeam[team.name] || '';
+            const currentValue = team.currentValue || '';
             return `
                 <div class="grid grid-cols-3 gap-3 items-center manager-row" data-team-name="${team.name}">
                     <label class="text-sm font-medium truncate" title="${team.name}">${team.name}</label>
@@ -374,7 +386,6 @@ export const app = {
         
         uiManager.elements.assignManagersModal.innerHTML = `
             <div class="card w-11/12 max-w-3xl mx-auto p-6 relative">
-                <!-- CORRECCIÓN 2: Botón de cerrar añadido -->
                 <button data-action="closeModal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl font-bold">&times;</button>
                 <h2 class="text-xl font-bold mb-2">Asignar Mánagers y Valores</h2>
                 <div class="grid grid-cols-3 gap-3 mb-2 px-2 text-sm font-bold text-gray-500">
@@ -395,19 +406,9 @@ export const app = {
     showMyTeamModal(recommendations) {
         const recHTML = recommendations.length ? recommendations.map(p => `<tr class="tier-${p.playerTier.toLowerCase()}"><td class="px-4 py-3"><div>${p.name} (${p.pos}, ${p.ovr})</div><div class="text-xs font-semibold text-gray-500">${p.playerTier}</div></td><td class="px-4 py-3 text-center" title="Tendencia del mercado para este tipo de jugador en los últimos 7 días.">${p.trend}</td><td class="px-4 py-3 text-center font-bold">${p.liquidity}</td><td class="px-4 py-3">${p.value.toFixed(1)}M</td><td class="px-4 py-3 font-semibold text-green-600">${p.cautiousPrice.toFixed(1)}M</td><td class="px-4 py-3 font-bold text-blue-600">${p.optimalPrice.toFixed(1)}M</td></tr>`).join('') : '<tr><td colspan="6" class="text-center p-4 text-gray-500">No hay datos para mostrar. Pega tu plantilla y analiza.</td></tr>';
         const teamInputText = document.getElementById('myTeamInput')?.value || '';
-        uiManager.elements.myTeamModal.innerHTML = `<div class="card w-11/12 max-w-6xl mx-auto p-6 relative"><style>.tier-estrella { background-color: #fffbeb; } .tier-calidad { background-color: #f0f9ff; }</style><button id="closeMyTeamModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 font-bold text-2xl">&times;</button><h2 class="text-2xl font-bold mb-2 text-gray-800">Análisis de Venta Avanzado</h2><div class="text-sm text-gray-600 mb-4 grid grid-cols-1 md:grid-cols-2 gap-x-4"><p><span class="font-semibold text-gray-800">Tendencia:</span> ?? Mercado al alza, ?? Mercado a la baja, ?? Estable.</p><p><span class="font-semibold text-gray-800">Liquidez:</span> Nº de ventas de jugadores similares. Mide la demanda.</p><p><span class="font-semibold text-green-600">Precio Cauteloso:</span> Precio para una venta con alta probabilidad y rapidez.</p><p><span class="font-semibold text-blue-600">Precio Óptimo:</span> Precio ambicioso para maximizar beneficio a medio plazo.</p></div><textarea id="myTeamInputModal" class="w-full h-40 p-3 border rounded-lg font-mono text-xs" placeholder="Pega aquí la plantilla...">${teamInputText}</textarea><div class="text-right mt-4 mb-6"><button id="analyzeMyTeamBtnModal" class="bg-green-600 text-white px-6 py-2 rounded-lg shadow">Volver a Analizar</button></div><div id="myTeamRecommendations"><div class="card overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Jugador (Tier)</th><th class="px-4 py-2 text-center" title="Momento del Mercado (últimos 7 días)">Tend.</th><th class="px-4 py-2 text-center" title="Número de ventas de jugadores similares.">Liquidez</th><th class="px-4 py-2 text-left">Valor Actual</th><th class="px-4 py-2 text-left">P. Cauteloso</th><th class="px-4 py-2 text-left">P. Óptimo</th></tr></thead><tbody class="bg-white divide-y">${recHTML}</tbody></table></div></div></div>`;
+        uiManager.elements.myTeamModal.innerHTML = `<div class="card w-11/12 max-w-6xl mx-auto p-6 relative"><style>.tier-estrella { background-color: #fffbeb; } .tier-calidad { background-color: #f0f9ff; }</style><button id="closeMyTeamModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 font-bold text-2xl">&times;</button><h2 class="text-2xl font-bold mb-2 text-gray-800">Análisis de Venta Avanzado</h2><div class="text-sm text-gray-600 mb-4 grid grid-cols-1 md:grid-cols-2 gap-x-4"><p><span class="font-semibold text-gray-800">Tendencia:</span> 🔥 Mercado al alza, ❄️ Mercado a la baja, ➡️ Estable.</p><p><span class="font-semibold text-gray-800">Liquidez:</span> Nº de ventas de jugadores similares. Mide la demanda.</p><p><span class="font-semibold text-green-600">Precio Cauteloso:</span> Precio para una venta con alta probabilidad y rapidez.</p><p><span class="font-semibold text-blue-600">Precio Óptimo:</span> Precio ambicioso para maximizar beneficio a medio plazo.</p></div><textarea id="myTeamInputModal" class="w-full h-40 p-3 border rounded-lg font-mono text-xs" placeholder="Pega aquí la plantilla...">${teamInputText}</textarea><div class="text-right mt-4 mb-6"><button id="analyzeMyTeamBtnModal" class="bg-green-600 text-white px-6 py-2 rounded-lg shadow">Volver a Analizar</button></div><div id="myTeamRecommendations"><div class="card overflow-x-auto"><table class="min-w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left">Jugador (Tier)</th><th class="px-4 py-2 text-center" title="Momento del Mercado (últimos 7 días)">Tend.</th><th class="px-4 py-2 text-center" title="Número de ventas de jugadores similares.">Liquidez</th><th class="px-4 py-2 text-left">Valor Actual</th><th class="px-4 py-2 text-left">P. Cauteloso</th><th class="px-4 py-2 text-left">P. Óptimo</th></tr></thead><tbody class="bg-white divide-y">${recHTML}</tbody></table></div></div></div>`;
         uiManager.elements.myTeamModal.classList.remove('hidden');
-    },
-
-    debugManager(managerName) {
-        if (!this.currentLeagueData || !this.allTransfers) {
-            console.error('? No hay datos cargados. Selecciona una liga primero.');
-            return;
-        }
-        return debugCashFlow(managerName, this.allTransfers, this.currentLeagueData);
     }
 };
 
 app.init();
-
-window.debugManager = (name) => app.debugManager(name);
