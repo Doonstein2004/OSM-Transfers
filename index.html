@@ -30,26 +30,27 @@
             <div class="flex items-center flex-wrap gap-3">
                 <select id="leagueSelector" class="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 max-w-xs"></select>
                 <button id="manageLeaguesBtn" class="bg-gray-700 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-800">Gestionar Ligas</button>
-                <!-- IDs añadidos para fácil acceso -->
                 <button id="assignManagersBtn" class="bg-yellow-500 text-white px-4 py-2 rounded-lg shadow hover:bg-yellow-600">Asignar Mánagers</button>
                 <button id="addTransfersBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">Añadir Fichajes</button>
             </div>
         </header>
 
-        <!-- El resto del HTML no cambia -->
         <div id="loader" class="text-center py-10"></div>
         <main id="mainContent" class="hidden">
             <div class="border-b border-gray-200 mb-6">
                 <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
                     <button class="tab py-4 px-1" data-tab="dashboard">Dashboard</button>
+                    <button class="tab py-4 px-1" data-tab="standings">Clasificación</button>
                     <button class="tab py-4 px-1" data-tab="rivalries">Análisis Mánager</button>
                     <button class="tab py-4 px-1" data-tab="managers">Ranking</button>
+                    <!-- --- NUEVA PESTAÑA --- -->
                     <button class="tab py-4 px-1" data-tab="evolution">Evolución</button>
                     <button class="tab py-4 px-1" data-tab="history">Historial</button>
                 </nav>
             </div>
             <div id="tab-content"></div>
         </main>
+        
         <!-- Modals -->
         <div id="manageLeaguesModal" class="modal-backdrop hidden"></div>
         <div id="importLeagueModal" class="modal-backdrop hidden"></div>
