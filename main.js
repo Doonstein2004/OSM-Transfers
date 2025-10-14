@@ -11,6 +11,17 @@ export const app = {
 
     // --- Inicialización ---
     async init() {
+try {
+            const response = await fetch('https://api-osm.fly.dev/api/test-cors');
+            if (!response.ok) {
+                throw new Error(`Error en la petición: ${response.status} ${response.statusText}`);
+            }
+            const data = await response.json();
+            alert(`¡ÉXITO! Conexión con la API establecida. Mensaje: ${data.message}`);
+        } catch (error) {
+            alert(`FALLO LA CONEXIÓN CON LA API. Error: ${error.message}. Revisa la consola F12 para ver un posible error de CORS.`);
+}
+        
         uiManager.init();
         this.setupEventListeners();
         uiManager.elements.loader.innerHTML = '<p>Conectando con la API...</p>';
@@ -412,3 +423,4 @@ export const app = {
 };
 
 app.init();
+
