@@ -1,5 +1,5 @@
 // js/apiService.js
-const API_BASE_URL = 'http://127.0.0.1:8000/api'; // La URL base de tu API de FastAPI
+const API_BASE_URL = 'https://api-osm.fly.dev'; // La URL base de tu API de FastAPI
 
 export const apiService = {
     /**
@@ -65,3 +65,4 @@ export const apiService = {
         }
     }
 };
+
