@@ -8,24 +8,19 @@ export const app = {
     currentTab: 'dashboard', currentSort: 'totalAssets',
     leagues: [], currentLeagueId: null, currentLeagueData: null, allTransfers: [],
 
-
-    // --- Inicialización ---
+    // --- Inicialización (CORREGIDA) ---
     async init() {
-try {
-            const response = await fetch('https://api-osm.fly.dev/api/test-cors');
-            if (!response.ok) {
-                throw new Error(`Error en la petición: ${response.status} ${response.statusText}`);
-            }
-            const data = await response.json();
-            alert(`¡ÉXITO! Conexión con la API establecida. Mensaje: ${data.message}`);
-        } catch (error) {
-            alert(`FALLO LA CONEXIÓN CON LA API. Error: ${error.message}. Revisa la consola F12 para ver un posible error de CORS.`);
-}
+        // 1. Hemos eliminado el bloque try/catch con el alert. Ya no es necesario.
         
         uiManager.init();
         this.setupEventListeners();
         uiManager.elements.loader.innerHTML = '<p>Conectando con la API...</p>';
-        this.loadInitialData();
+        
+        // 2. AÑADIMOS 'await' aquí.
+        // Esto le dice a la función init que se detenga en esta línea y ESPERE
+        // hasta que loadInitialData() haya terminado completamente su trabajo
+        // (incluyendo la espera a la respuesta de la API).
+        await this.loadInitialData();
     },
 
     async loadInitialData() {
@@ -33,20 +28,16 @@ try {
         this.leagues = await apiService.getAllLeagues();
         uiManager.renderLeagueSelector(this.leagues, this.currentLeagueId);
         
-        // CORRECCIÓN: Lógica de carga inicial más segura.
         let leagueToLoad = localStorage.getItem('selectedLeagueId');
 
-        // 1. Si no hay nada en localStorage, intentar con la primera liga de la lista.
         if (!leagueToLoad && this.leagues.length > 0) {
             leagueToLoad = this.leagues[0].id;
         }
 
-        // 2. Validar que la liga a cargar (de localStorage o la primera) realmente existe.
         if (leagueToLoad && this.leagues.some(l => String(l.id) === String(leagueToLoad))) {
             await this.switchLeague(leagueToLoad);
         } else {
-            // 3. Si no hay liga válida que cargar, limpiar y mostrar el mensaje de bienvenida.
-            localStorage.removeItem('selectedLeagueId'); // Limpiar valor inválido si lo hubiera
+            localStorage.removeItem('selectedLeagueId');
             uiManager.showLoader(false);
             uiManager.elements.tabContent.innerHTML = `<p class="text-center p-8">Bienvenido. Por favor, selecciona una liga del menú superior.</p>`;
             this.updateHeaderButtonsState(false);
@@ -423,4 +414,5 @@ try {
 };
 
 app.init();
+
 
